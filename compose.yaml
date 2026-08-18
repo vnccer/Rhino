@@ -15,10 +15,12 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://security_monitor:change-me@db:5432/security_monitor}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      RULES_PATH: /app/rules
     depends_on:
       db:
         condition: service_healthy
@@ -41,4 +43,3 @@ services:
 
 volumes:
   postgres_data:
-

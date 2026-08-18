@@ -5,18 +5,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml ./
-COPY app ./app
+COPY backend/pyproject.toml ./
+COPY backend/app ./app
+COPY rules ./rules
 RUN pip install --no-cache-dir .
 
-COPY alembic.ini ./
-COPY migrations ./migrations
+COPY backend/alembic.ini ./
+COPY backend/migrations ./migrations
 
 EXPOSE 8000
 
 FROM base AS test
 RUN pip install --no-cache-dir ".[dev]"
-COPY tests ./tests
+COPY backend/tests ./tests
+COPY demo ./demo
 CMD ["pytest"]
 
 FROM base AS runtime

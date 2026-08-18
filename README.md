@@ -1,6 +1,6 @@
 # AI-Agent Security Monitor
 
-AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 1：统一事件接入。
+AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 2：规则检测引擎。
 
 ## 当前能力
 
@@ -8,6 +8,9 @@ AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完�
 - 统一事件单条/批量写入：`POST /api/events`
 - 事件查询与时间、来源、类型、`trace_id` 过滤：`GET /api/events`
 - 基于 `event_id` 的幂等去重
+- YAML 驱动的字段匹配、分组计数、去重计数和时间窗口序列检测
+- 首批五条检测规则：Agent 高频调用、Web 多路径探测、认证失败后成功、解释器启动下载工具、文件落地后启动进程
+- 可解释告警查询：`GET /api/alerts`，包含证据事件、时间范围和 MITRE 技术编号
 - PostgreSQL 16、SQLAlchemy 2 和 Alembic 迁移骨架
 - React + TypeScript 健康状态页面
 - Docker Compose 一键启动
@@ -52,6 +55,15 @@ curl "http://localhost:8000/api/events?source=agent&event_type=tool_call&trace_i
 ```
 
 `POST /api/events` 接受一个事件对象或事件对象数组（每批最多 1000 条）。查询接口还支持 `start_time`、`end_time`、`limit` 和 `offset`；时间使用带时区的 ISO 8601 格式。
+
+回放阶段 2 攻击样本并查询告警：
+
+```bash
+python demo/replay.py demo/events-stage2.jsonl
+curl "http://localhost:8000/api/alerts?severity=critical"
+```
+
+告警接口支持 `rule_id`、`severity`、`start_time`、`end_time`、`limit` 和 `offset` 过滤。规则位于 `rules/*.yaml`；每条规则包含 `id`、`name`、`conditions`、`window`、`threshold`、`severity` 和 `mitre`。修改规则后需重启后端进程。
 
 停止服务：
 
@@ -129,7 +141,7 @@ alembic revision --autogenerate -m "describe change"
 backend/       FastAPI、SQLAlchemy、Alembic 与测试
 frontend/      React、TypeScript、Vite 与 Vitest
 collectors/    Agent Tool Call 上报示例及后续采集器
-rules/         后续阶段的 YAML 检测规则
-demo/          后续阶段的演示数据和回放器
+rules/         YAML 检测规则
+demo/          阶段 2 演示数据和 JSONL 回放器
 docs/          施工文档
 ```

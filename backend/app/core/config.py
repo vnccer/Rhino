@@ -8,6 +8,7 @@ class Settings(BaseSettings):
         "postgresql+psycopg://security_monitor:change-me@localhost:5432/security_monitor"
     )
     log_level: str = "INFO"
+    rules_path: str | None = None
 
     model_config = SettingsConfigDict(
         env_file="../.env",
@@ -19,4 +20,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

@@ -1,0 +1,80 @@
+- id: agent-tool-call-burst
+  name: Agent high-frequency tool calls
+  conditions:
+    type: count
+    match:
+      source: agent
+      event_type: tool_call
+    group_by: [actor.id, trace_id]
+  window: 1m
+  threshold: 8
+  severity: high
+  mitre: [T1059]
+
+- id: web-multi-path-probe
+  name: Rapid multi-path web probing
+  conditions:
+    type: count
+    match:
+      source: web
+      event_type: http_request
+    group_by: [actor.id]
+    distinct_by: attributes.path
+  window: 1m
+  threshold: 6
+  severity: high
+  mitre: [T1595.002]
+
+- id: auth-failures-then-success
+  name: Authentication failures followed by success
+  conditions:
+    type: sequence
+    group_by: [actor.id]
+    ordered:
+      - match:
+          event_type: http_request
+          action: authenticate
+          result: failure
+        min_count: 3
+      - match:
+          event_type: http_request
+          action: authenticate
+          result: success
+  window: 5m
+  threshold: 1
+  severity: critical
+  mitre: [T1110]
+
+- id: shell-launches-downloader
+  name: Command interpreter launches download tool
+  conditions:
+    type: count
+    match:
+      source: host
+      event_type: process_start
+      object.name:
+        in: [curl, wget, certutil, bitsadmin, Invoke-WebRequest]
+      attributes.parent_process_name:
+        in: [sh, bash, cmd.exe, powershell.exe, pwsh.exe]
+    group_by: [trace_id]
+  window: 30s
+  threshold: 1
+  severity: critical
+  mitre: [T1059, T1105]
+
+- id: file-write-then-process
+  name: New process created after file write
+  conditions:
+    type: sequence
+    group_by: [trace_id]
+    ordered:
+      - match:
+          source: host
+          event_type: file_write
+      - match:
+          source: host
+          event_type: process_start
+  window: 2m
+  threshold: 1
+  severity: high
+  mitre: [T1105, T1204.002]

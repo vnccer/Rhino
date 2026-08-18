@@ -7,12 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.models.event import Event
 from app.schemas.event import EventCreate
+from app.services.detection import detect_events
 
 
-def create_event(db: Session, event: EventCreate) -> Event:
+def create_event(db: Session, event: EventCreate) -> tuple[Event, bool]:
     existing = db.get(Event, event.event_id)
     if existing is not None:
-        return existing
+        return existing, False
 
     values = event.model_dump()
     values["source"] = event.source.value
@@ -30,12 +31,16 @@ def create_event(db: Session, event: EventCreate) -> Event:
         duplicate = db.get(Event, event.event_id)
         if duplicate is None:
             raise
-        return duplicate
-    return record
+        return duplicate, False
+    return record, True
 
 
 def create_events(db: Session, events: Sequence[EventCreate]) -> list[Event]:
-    records = [create_event(db, event) for event in events]
+    results = [create_event(db, event) for event in events]
+    records = [record for record, _ in results]
+    new_records = [record for record, is_new in results if is_new]
+    if new_records:
+        detect_events(db, new_records)
     db.commit()
     return records
 
