@@ -1,10 +1,13 @@
 # AI-Agent Security Monitor
 
-AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 0：可启动、可测试的工程骨架。
+AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 1：统一事件接入。
 
 ## 当前能力
 
 - FastAPI 健康检查：`GET /health`
+- 统一事件单条/批量写入：`POST /api/events`
+- 事件查询与时间、来源、类型、`trace_id` 过滤：`GET /api/events`
+- 基于 `event_id` 的幂等去重
 - PostgreSQL 16、SQLAlchemy 2 和 Alembic 迁移骨架
 - React + TypeScript 健康状态页面
 - Docker Compose 一键启动
@@ -35,6 +38,20 @@ curl http://localhost:8000/health
 ```json
 {"status":"ok"}
 ```
+
+上报一条 Agent Tool Call 示例：
+
+```bash
+python collectors/agent_tool_call.py
+```
+
+查询事件：
+
+```bash
+curl "http://localhost:8000/api/events?source=agent&event_type=tool_call&trace_id=demo-session-01"
+```
+
+`POST /api/events` 接受一个事件对象或事件对象数组（每批最多 1000 条）。查询接口还支持 `start_time`、`end_time`、`limit` 和 `offset`；时间使用带时区的 ISO 8601 格式。
 
 停止服务：
 
@@ -111,7 +128,7 @@ alembic revision --autogenerate -m "describe change"
 ```text
 backend/       FastAPI、SQLAlchemy、Alembic 与测试
 frontend/      React、TypeScript、Vite 与 Vitest
-collectors/    后续阶段的数据采集器
+collectors/    Agent Tool Call 上报示例及后续采集器
 rules/         后续阶段的 YAML 检测规则
 demo/          后续阶段的演示数据和回放器
 docs/          施工文档
