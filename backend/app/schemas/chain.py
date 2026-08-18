@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.event import EventRead
 
@@ -16,6 +16,29 @@ class AttackStage(StrEnum):
     EXTERNAL_COMMUNICATION = "external_communication"
 
 
+class RiskLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class RiskFactor(BaseModel):
+    score: int = Field(ge=0, le=100)
+    weight: float = Field(ge=0, le=1)
+    contribution: float = Field(ge=0, le=100)
+    reasons: list[str]
+
+
+class RiskAssessment(BaseModel):
+    score: int = Field(ge=0, le=100)
+    level: RiskLevel
+    breakdown: dict[str, RiskFactor]
+    reasons: list[str]
+    evidence_event_ids: list[UUID]
+    recommendations: list[str]
+
+
 class ChainSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,6 +50,7 @@ class ChainSummary(BaseModel):
     event_ids: list[UUID]
     alert_ids: list[UUID]
     confidence: int
+    risk: RiskAssessment
 
 
 class ChainNodeRead(BaseModel):

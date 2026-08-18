@@ -42,7 +42,9 @@ def create_events(db: Session, events: Sequence[EventCreate]) -> list[Event]:
     new_records = [record for record, is_new in results if is_new]
     if new_records:
         detect_events(db, new_records)
-        rebuild_attack_chains(db)
+    # Rebuild even for an idempotent replay so a newly added correlation schema
+    # can backfill chains from events and alerts that already existed.
+    rebuild_attack_chains(db)
     db.commit()
     return records
 

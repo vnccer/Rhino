@@ -22,8 +22,25 @@ class AttackChain(Base):
     event_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     alert_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    risk_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    risk_level: Mapped[str] = mapped_column(String(16), nullable=False, default="low")
+    risk_breakdown: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    risk_reasons: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    risk_evidence_event_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    recommendations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    @property
+    def risk(self) -> dict[str, object]:
+        return {
+            "score": self.risk_score,
+            "level": self.risk_level,
+            "breakdown": self.risk_breakdown,
+            "reasons": self.risk_reasons,
+            "evidence_event_ids": self.risk_evidence_event_ids,
+            "recommendations": self.recommendations,
+        }
 
 
 class ChainNode(Base):

@@ -1,0 +1,14 @@
+default_importance: 40
+assets:
+  - entity_type: user
+    entity_id: admin
+    name: Privileged administrator account
+    importance: 90
+  - entity_type: agent
+    entity_id: compromised-agent
+    name: Production AI agent
+    importance: 85
+  - entity_type: ip
+    entity_id: 10.0.0.25
+    name: Internal application server
+    importance: 80

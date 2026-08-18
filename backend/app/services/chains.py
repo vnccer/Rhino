@@ -10,6 +10,7 @@ from app.models.alert import Alert
 from app.models.chain import AttackChain, ChainEdge, ChainNode
 from app.models.event import Event
 from app.schemas.chain import AttackStage
+from app.services.risk import calculate_risk
 
 CHAIN_NAMESPACE = UUID("cebe0d0c-2678-4a5b-89ee-d5dd8976fab3")
 NODE_NAMESPACE = UUID("b9278d82-5806-401a-a150-e9de4f6c8d7a")
@@ -223,6 +224,7 @@ def rebuild_attack_chains(db: Session) -> list[AttackChain]:
             if any(UUID(value) in event_ids for value in alert.evidence_event_ids)
         ]
         confidence = round(sum(link_item[4] for link_item in component_links) / len(component_links))
+        risk = calculate_risk(component, related_alerts, stages, confidence)
         chain = AttackChain(
             chain_id=chain_id,
             title=f"Attack chain: {' -> '.join(stage.value for stage in stages)}",
@@ -232,10 +234,17 @@ def rebuild_attack_chains(db: Session) -> list[AttackChain]:
             event_ids=[str(event.event_id) for event in component],
             alert_ids=[str(alert.alert_id) for alert in related_alerts],
             confidence=confidence,
+            risk_score=risk["score"],
+            risk_level=risk["level"],
+            risk_breakdown=risk["breakdown"],
+            risk_reasons=risk["reasons"],
+            risk_evidence_event_ids=risk["evidence_event_ids"],
+            recommendations=risk["recommendations"],
             created_at=now,
             updated_at=now,
         )
         db.add(chain)
+        db.flush()
         chains.append(chain)
 
         nodes: dict[tuple[str, str], ChainNode] = {}
@@ -258,6 +267,7 @@ def rebuild_attack_chains(db: Session) -> list[AttackChain]:
                 elif str(event.event_id) not in nodes[key].event_ids:
                     nodes[key].event_ids.append(str(event.event_id))
         db.add_all(nodes.values())
+        db.flush()
 
         edge_signatures: set[str] = set()
 

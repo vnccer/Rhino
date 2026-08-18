@@ -8,6 +8,7 @@ WORKDIR /app
 COPY backend/pyproject.toml ./
 COPY backend/app ./app
 COPY rules ./rules
+COPY assets.yaml ./assets.yaml
 RUN pip install --no-cache-dir .
 
 COPY backend/alembic.ini ./

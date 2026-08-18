@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     )
     log_level: str = "INFO"
     rules_path: str | None = None
+    assets_path: str | None = None
 
     model_config = SettingsConfigDict(
         env_file="../.env",

@@ -1,6 +1,6 @@
 # AI-Agent Security Monitor
 
-AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 3：攻击链关联。
+AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 4：风险评分与解释。
 
 ## 当前能力
 
@@ -15,6 +15,9 @@ AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完�
 - Agent、用户、进程、文件、IP、域名和会话实体图，以及调用、创建、写入、执行、连接和派生关系
 - 攻击链列表与详情：`GET /api/chains`、`GET /api/chains/{id}`，节点可追溯到原始事件
 - 六个攻击阶段：侦察、凭证访问、执行、持久化、横向和外联
+- 确定性的 0–100 风险评分，包含告警严重度、攻击链完整度、资产重要度、自动化强度和关联置信度
+- 低、中、高、严重四级风险，以及分项贡献、加分原因、证据事件和建议处置
+- YAML 资产重要度配置，便于在接入 CMDB 前维护关键身份、Agent、主机和地址
 - PostgreSQL 16、SQLAlchemy 2 和 Alembic 迁移骨架
 - React + TypeScript 健康状态页面
 - Docker Compose 一键启动
@@ -78,6 +81,15 @@ curl "http://localhost:8000/api/chains/<chain-id>"
 ```
 
 攻击链列表支持 `stage`、`min_confidence`、`limit` 和 `offset` 过滤。详情返回实体节点、带关联原因和置信度的关系边，以及按时间排序的完整原始事件。
+
+列表与详情中的 `risk` 字段均返回总分、等级和完整解释。评分公式为：
+
+```text
+告警严重度 × 0.30 + 攻击链完整度 × 0.25 + 资产重要度 × 0.20
++ 自动化强度 × 0.15 + 关联置信度 × 0.10
+```
+
+资产重要度维护在 `assets.yaml`。修改规则或资产配置后需重启后端；再次回放已有事件会重建攻击链并刷新风险评分。
 
 停止服务：
 
@@ -156,6 +168,7 @@ backend/       FastAPI、SQLAlchemy、Alembic 与测试
 frontend/      React、TypeScript、Vite 与 Vitest
 collectors/    Agent Tool Call 上报示例及后续采集器
 rules/         YAML 检测规则
+assets.yaml    资产重要度配置
 demo/          阶段 2/3 演示数据和 JSONL 回放器
 docs/          施工文档
 ```

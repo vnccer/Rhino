@@ -46,11 +46,20 @@ def main() -> None:
 
     base_url = args.api_url.rstrip("/")
     events = read_events(args.event_file)
+    replayed_event_ids = {event["event_id"] for event in events}
     request_json(f"{base_url}/api/events", payload=events)
-    alerts = request_json(f"{base_url}/api/alerts?limit=1000")
-    chains = request_json(f"{base_url}/api/chains?limit=1000")
+    alerts = [
+        alert
+        for alert in request_json(f"{base_url}/api/alerts?limit=1000")
+        if replayed_event_ids.intersection(alert["evidence_event_ids"])
+    ]
+    chains = [
+        chain
+        for chain in request_json(f"{base_url}/api/chains?limit=1000")
+        if replayed_event_ids.intersection(chain["event_ids"])
+    ]
     print(
-        f"Replayed {len(events)} events; API currently contains "
+        f"Replayed {len(events)} events; matched "
         f"{len(alerts)} alert(s) and {len(chains)} attack chain(s)."
     )
     for alert in alerts:

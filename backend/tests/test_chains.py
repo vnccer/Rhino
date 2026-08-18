@@ -52,6 +52,10 @@ def test_stage3_demo_builds_one_traceable_attack_chain(client: TestClient) -> No
     }
     assert any(edge["reason"] == "parent_event_id" for edge in detail["edges"])
 
+    replayed = client.post("/api/events", json=events)
+    assert replayed.status_code == 201
+    assert len(client.get("/api/chains").json()) == 1
+
 
 def test_different_traces_do_not_merge_on_temporal_actor_proximity(client: TestClient) -> None:
     first, second = load_stage3_events()[-1].copy(), load_stage3_events()[-1].copy()
