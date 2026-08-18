@@ -48,9 +48,16 @@ def main() -> None:
     events = read_events(args.event_file)
     request_json(f"{base_url}/api/events", payload=events)
     alerts = request_json(f"{base_url}/api/alerts?limit=1000")
-    print(f"Replayed {len(events)} events; API currently contains {len(alerts)} alert(s).")
+    chains = request_json(f"{base_url}/api/chains?limit=1000")
+    print(
+        f"Replayed {len(events)} events; API currently contains "
+        f"{len(alerts)} alert(s) and {len(chains)} attack chain(s)."
+    )
     for alert in alerts:
         print(f"- [{alert['severity_label']}] {alert['rule_id']}: {alert['rule_name']}")
+    for chain in chains:
+        stages = " -> ".join(chain["stages"])
+        print(f"- [chain {chain['confidence']}%] {chain['chain_id']}: {stages}")
 
 
 if __name__ == "__main__":

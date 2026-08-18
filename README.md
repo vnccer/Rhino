@@ -1,6 +1,6 @@
 # AI-Agent Security Monitor
 
-AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 2：规则检测引擎。
+AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 3：攻击链关联。
 
 ## 当前能力
 
@@ -11,6 +11,10 @@ AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完�
 - YAML 驱动的字段匹配、分组计数、去重计数和时间窗口序列检测
 - 首批五条检测规则：Agent 高频调用、Web 多路径探测、认证失败后成功、解释器启动下载工具、文件落地后启动进程
 - 可解释告警查询：`GET /api/alerts`，包含证据事件、时间范围和 MITRE 技术编号
+- 按父事件、会话、PID/PPID、文件哈希、IP 和主体时间近邻关联攻击行为
+- Agent、用户、进程、文件、IP、域名和会话实体图，以及调用、创建、写入、执行、连接和派生关系
+- 攻击链列表与详情：`GET /api/chains`、`GET /api/chains/{id}`，节点可追溯到原始事件
+- 六个攻击阶段：侦察、凭证访问、执行、持久化、横向和外联
 - PostgreSQL 16、SQLAlchemy 2 和 Alembic 迁移骨架
 - React + TypeScript 健康状态页面
 - Docker Compose 一键启动
@@ -64,6 +68,16 @@ curl "http://localhost:8000/api/alerts?severity=critical"
 ```
 
 告警接口支持 `rule_id`、`severity`、`start_time`、`end_time`、`limit` 和 `offset` 过滤。规则位于 `rules/*.yaml`；每条规则包含 `id`、`name`、`conditions`、`window`、`threshold`、`severity` 和 `mitre`。修改规则后需重启后端进程。
+
+回放阶段 3 完整攻击链并查看详情：
+
+```bash
+python demo/replay.py demo/events-stage3.jsonl
+curl "http://localhost:8000/api/chains"
+curl "http://localhost:8000/api/chains/<chain-id>"
+```
+
+攻击链列表支持 `stage`、`min_confidence`、`limit` 和 `offset` 过滤。详情返回实体节点、带关联原因和置信度的关系边，以及按时间排序的完整原始事件。
 
 停止服务：
 
@@ -142,6 +156,6 @@ backend/       FastAPI、SQLAlchemy、Alembic 与测试
 frontend/      React、TypeScript、Vite 与 Vitest
 collectors/    Agent Tool Call 上报示例及后续采集器
 rules/         YAML 检测规则
-demo/          阶段 2 演示数据和 JSONL 回放器
+demo/          阶段 2/3 演示数据和 JSONL 回放器
 docs/          施工文档
 ```

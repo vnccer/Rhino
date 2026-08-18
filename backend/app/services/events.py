@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.event import Event
 from app.schemas.event import EventCreate
+from app.services.chains import rebuild_attack_chains
 from app.services.detection import detect_events
 
 
@@ -41,6 +42,7 @@ def create_events(db: Session, events: Sequence[EventCreate]) -> list[Event]:
     new_records = [record for record, is_new in results if is_new]
     if new_records:
         detect_events(db, new_records)
+        rebuild_attack_chains(db)
     db.commit()
     return records
 
