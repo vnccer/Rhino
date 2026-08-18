@@ -13,6 +13,7 @@ frontend/coverage/
 frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+demo/output/
 .idea/
 .vscode/
 .DS_Store

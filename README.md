@@ -1,6 +1,29 @@
 # AI-Agent Security Monitor
 
-AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 5：分析控制台。
+AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 6：可复现演示与最终交付。
+
+## 架构
+
+```mermaid
+flowchart LR
+    A[Agent Tool Call] --> E[统一事件接入]
+    H[主机行为] --> E
+    W[Web 请求] --> E
+    E --> P[(PostgreSQL)]
+    E --> R[YAML 规则检测]
+    R --> C[实体与攻击链关联]
+    C --> S[确定性风险评分]
+    S --> API[FastAPI]
+    API --> UI[React 分析控制台]
+```
+
+平台以统一事件模型作为模块边界，检测、关联和评分均为确定性逻辑；前端只消费 API，不硬编码演示结果。
+
+## 演示截图
+
+![安全态势总览](docs/images/dashboard-overview.png)
+
+![攻击链详情](docs/images/attack-chain-detail.png)
 
 ## 当前能力
 
@@ -26,32 +49,61 @@ AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完�
 - PostgreSQL 16、SQLAlchemy 2 和 Alembic 迁移骨架
 - React + TypeScript + ECharts 分析控制台
 - Docker Compose 一键启动
+- 按事件时间顺序回放的正常运维与 AI 自动攻击场景
+- 一键启动、场景验收、攻击链 JSON 导出和数据卷清理
 - Pytest 与 Vitest 基础测试
 
-## 快速启动
+## 一键演示
 
 环境要求：Docker Desktop 或 Docker Engine（含 Compose 插件）。
 
+从纯净数据开始运行 AI 自动攻击场景：
+
 ```bash
-docker compose up --build
+python demo/clean.py
+python demo/run_demo.py ai_attack
 ```
 
-启动后访问：
+脚本会构建并启动服务、等待控制台可用、按事件时间顺序回放样本，并验证至少产生一条高风险链。攻击链详情同时写入 `demo/output/ai_attack_chains.json`。
+
+预期结果：16 个事件、6 条告警、1 条攻击链；链覆盖侦察、凭据访问、执行、持久化、横向和外联六阶段，风险分数 90（严重），关联置信度 82%。
+
+随后访问：
 
 - 控制台：http://localhost:3000
 - API：http://localhost:8000/health
 - OpenAPI：http://localhost:8000/docs
 
-验证 API：
+回放正常运维对照样本：
 
 ```bash
-curl http://localhost:8000/health
+python demo/clean.py
+python demo/run_demo.py normal_ops
 ```
 
-预期响应：
+预期结果：6 个事件、0 条告警、0 条高危攻击链。`--skip-build` 可复用现有镜像，`--delay 0.5` 可按固定墙钟间隔慢速演示。
 
-```json
-{"status":"ok"}
+如果服务已启动，也可只运行通用回放器：
+
+```bash
+python demo/replay.py demo/ai_attack.jsonl --output demo/output/chains.json
+```
+
+固定事件 ID 使重复回放保持幂等。回放器会校验 JSONL、按带时区的时间戳排序并逐条发送事件。示例链见 `demo/example_attack_chain.json`，完整分析见 `docs/EXAMPLE_RISK_REPORT.md`。
+
+清理命令会停止本项目 Compose 服务并删除本地 PostgreSQL 数据卷：
+
+```bash
+python demo/clean.py
+```
+
+## 快速启动
+
+仅启动平台而不回放数据：
+
+```bash
+docker compose up --build
+curl http://localhost:8000/health
 ```
 
 上报一条 Agent Tool Call 示例：
@@ -74,7 +126,7 @@ curl "http://localhost:8000/api/events?source=agent&event_type=tool_call&trace_i
 curl "http://localhost:8000/api/overview?days=7"
 ```
 
-回放阶段 2 攻击样本并查询告警：
+回放早期阶段样本并查询告警：
 
 ```bash
 python demo/replay.py demo/events-stage2.jsonl
@@ -83,7 +135,7 @@ curl "http://localhost:8000/api/alerts?severity=critical"
 
 告警接口支持 `rule_id`、`severity`、`source`、`start_time`、`end_time`、`limit` 和 `offset` 过滤，并返回证据事件涉及的数据来源。规则位于 `rules/*.yaml`；每条规则包含 `id`、`name`、`conditions`、`window`、`threshold`、`severity` 和 `mitre`。修改规则后需重启后端进程。
 
-回放阶段 3 完整攻击链并查看详情：
+回放早期阶段完整攻击链并查看详情：
 
 ```bash
 python demo/replay.py demo/events-stage3.jsonl
@@ -113,6 +165,28 @@ docker compose down
 ```bash
 docker compose down -v
 ```
+
+## 检测规则
+
+规则位于 `rules/stage2.yaml`，采用字段匹配、分组计数、去重计数和有序序列两类检测方式：
+
+| 规则 | 触发条件 | 严重度 | MITRE |
+|---|---|---|---|
+| Agent 高频 Tool Call | 同一 Agent/Trace 1 分钟内 8 次调用 | 高 | T1059 |
+| 短时间多路径探测 | 同一来源 1 分钟内探测 6 个不同路径 | 高 | T1595.002 |
+| 认证失败后成功 | 5 分钟内 3 次失败后成功 | 严重 | T1110 |
+| 解释器启动下载工具 | Shell 启动 curl/wget 等下载工具 | 严重 | T1059、T1105 |
+| 文件落地后创建进程 | 同一 Trace 2 分钟内写文件后启动进程 | 高 | T1105、T1204.002 |
+
+每条告警包含规则 ID、严重度、时间范围、MITRE 编号和证据事件 ID。修改规则后需重启后端。
+
+## 设计取舍
+
+- **确定性优先**：规则、关联和评分可追溯、可重复，不让大模型直接决定风险。
+- **MVP 保持精简**：PostgreSQL 同时承载事件和实体关系，暂不引入 Kafka、Neo4j 或机器学习。
+- **同步重建攻击链**：数据规模较小时实现简单且结果一致；规模增大后应改为异步增量计算。
+- **固定演示时间与 UUID**：便于幂等回放和结果对比，但生产采集器应生成真实 UTC 时间和全局唯一 ID。
+- **配置化资产重要度**：`assets.yaml` 足以支持演示，生产环境应接入 CMDB 并建立配置变更审计。
 
 ## 本地开发
 
@@ -180,6 +254,6 @@ frontend/      React、TypeScript、Vite 与 Vitest
 collectors/    Agent Tool Call 上报示例及后续采集器
 rules/         YAML 检测规则
 assets.yaml    资产重要度配置
-demo/          阶段 2/3 演示数据和 JSONL 回放器
+demo/          两类演示数据、回放器、一键演示、清理脚本和示例链
 docs/          施工文档
 ```
