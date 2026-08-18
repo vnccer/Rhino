@@ -1,6 +1,6 @@
 # AI-Agent Security Monitor
 
-AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 4：风险评分与解释。
+AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 5：分析控制台。
 
 ## 当前能力
 
@@ -18,8 +18,13 @@ AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完�
 - 确定性的 0–100 风险评分，包含告警严重度、攻击链完整度、资产重要度、自动化强度和关联置信度
 - 低、中、高、严重四级风险，以及分项贡献、加分原因、证据事件和建议处置
 - YAML 资产重要度配置，便于在接入 CMDB 前维护关键身份、Agent、主机和地址
+- 分析控制台总览：事件、告警、高危链、来源分布和 7 天趋势
+- 告警工作台：按等级、规则、来源和时间范围筛选，并查看检测证据
+- 攻击链分析：MITRE 阶段、实体关系图、事件时间线和原始事件抽屉
+- 链节点详情：关联原因、评分分项、证据事件和处置建议
+- 控制台加载、空数据、错误状态和移动端响应式布局
 - PostgreSQL 16、SQLAlchemy 2 和 Alembic 迁移骨架
-- React + TypeScript 健康状态页面
+- React + TypeScript + ECharts 分析控制台
 - Docker Compose 一键启动
 - Pytest 与 Vitest 基础测试
 
@@ -63,6 +68,12 @@ curl "http://localhost:8000/api/events?source=agent&event_type=tool_call&trace_i
 
 `POST /api/events` 接受一个事件对象或事件对象数组（每批最多 1000 条）。查询接口还支持 `start_time`、`end_time`、`limit` 和 `offset`；时间使用带时区的 ISO 8601 格式。
 
+控制台总览数据来自聚合接口：
+
+```bash
+curl "http://localhost:8000/api/overview?days=7"
+```
+
 回放阶段 2 攻击样本并查询告警：
 
 ```bash
@@ -70,7 +81,7 @@ python demo/replay.py demo/events-stage2.jsonl
 curl "http://localhost:8000/api/alerts?severity=critical"
 ```
 
-告警接口支持 `rule_id`、`severity`、`start_time`、`end_time`、`limit` 和 `offset` 过滤。规则位于 `rules/*.yaml`；每条规则包含 `id`、`name`、`conditions`、`window`、`threshold`、`severity` 和 `mitre`。修改规则后需重启后端进程。
+告警接口支持 `rule_id`、`severity`、`source`、`start_time`、`end_time`、`limit` 和 `offset` 过滤，并返回证据事件涉及的数据来源。规则位于 `rules/*.yaml`；每条规则包含 `id`、`name`、`conditions`、`window`、`threshold`、`severity` 和 `mitre`。修改规则后需重启后端进程。
 
 回放阶段 3 完整攻击链并查看详情：
 
@@ -136,7 +147,7 @@ npm install
 npm run dev
 ```
 
-Vite 开发服务器会将 `/api` 请求代理到 `http://localhost:8000`。
+Vite 开发服务器会将 `/api` 请求代理到 `http://127.0.0.1:8000`。
 
 运行测试与构建：
 

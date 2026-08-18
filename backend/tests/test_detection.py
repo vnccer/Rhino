@@ -81,6 +81,7 @@ def test_alert_filters_and_validation(client: TestClient) -> None:
     critical = client.get("/api/alerts", params={"severity": "critical"})
     invalid_severity = client.get("/api/alerts", params={"severity": "urgent"})
     invalid_limit = client.get("/api/alerts", params={"limit": 0})
+    web = client.get("/api/alerts", params={"source": "web"})
 
     assert critical.status_code == 200
     assert {alert["rule_id"] for alert in critical.json()} == {
@@ -89,3 +90,24 @@ def test_alert_filters_and_validation(client: TestClient) -> None:
     }
     assert invalid_severity.status_code == 422
     assert invalid_limit.status_code == 422
+    assert {alert["rule_id"] for alert in web.json()} == {
+        "web-multi-path-probe", "auth-failures-then-success"
+    }
+    assert all(alert["sources"] == ["web"] for alert in web.json())
+
+
+def test_overview_aggregates_api_data(client: TestClient) -> None:
+    events = load_jsonl("events-stage2.jsonl")
+    assert client.post("/api/events", json=events).status_code == 201
+
+    overview = client.get("/api/overview", params={"days": 3})
+
+    assert overview.status_code == 200
+    payload = overview.json()
+    assert payload["event_count"] == len(events)
+    assert payload["alert_count"] == 5
+    assert payload["critical_alert_count"] == 2
+    assert payload["source_counts"] == {"agent": 8, "host": 3, "web": 10}
+    assert len(payload["trend"]) == 3
+    assert sum(point["events"] for point in payload["trend"]) == len(events)
+    assert client.get("/api/overview", params={"days": 0}).status_code == 422

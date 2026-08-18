@@ -7,6 +7,7 @@ from app.api.alerts import router as alerts_router
 from app.api.chains import router as chains_router
 from app.api.events import router as events_router
 from app.api.health import router as health_router
+from app.api.overview import router as overview_router
 from app.core.logging import configure_logging
 
 
@@ -25,3 +26,4 @@ app.include_router(health_router)
 app.include_router(events_router)
 app.include_router(alerts_router)
 app.include_router(chains_router)
+app.include_router(overview_router)
