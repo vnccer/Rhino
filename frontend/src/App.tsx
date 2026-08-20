@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { getAlerts, getChain, getChains, getOverview, login } from "./api";
+import { ApiError, getAlerts, getChain, getChains, getOverview, login } from "./api";
 import { ChainGraph } from "./components/ChainGraph";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { TrendChart } from "./components/TrendChart";
@@ -153,7 +153,11 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) {
           sessionStorage.setItem("admin_access_token", result.access_token);
           onAuthenticated();
         })
-        .catch(() => setError("用户名或密码错误"))
+        .catch((loginError: unknown) => setError(
+          loginError instanceof ApiError && loginError.status === 429
+            ? "登录尝试过于频繁，请稍后再试"
+            : "用户名或密码错误",
+        ))
         .finally(() => setSubmitting(false));
     }}>
       <div className="brand-mark"><ShieldAlert size={22} /></div>

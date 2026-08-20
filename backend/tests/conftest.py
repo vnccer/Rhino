@@ -7,11 +7,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
+from app.core.security import admin_login_rate_limiter, collector_rate_limiter
 from app.main import app
 
 
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
+    admin_login_rate_limiter.reset()
+    collector_rate_limiter.reset()
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -35,5 +38,7 @@ def client() -> Generator[TestClient, None, None]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    admin_login_rate_limiter.reset()
+    collector_rate_limiter.reset()
     Base.metadata.drop_all(engine)
     engine.dispose()

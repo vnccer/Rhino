@@ -265,7 +265,7 @@ curl --insecure --verbose https://127.0.0.1/health
 
 ## 身份认证与采集器接入
 
-生产模板设置 `AUTH_REQUIRED=true`。此时除 `/health`、`/api/auth/login` 和采集器注册外，事件、告警、攻击链、总览和管理员接口都要求管理员 Bearer 令牌；原有匿名 `POST /api/events` 返回 `401`。本地 `.env.example` 保持 `AUTH_REQUIRED=false`，便于继续运行阶段六演示，不能用于生产。
+生产模板设置 `AUTH_REQUIRED=true`。此时除 `/health`、`/api/auth/login` 和采集器注册外，事件、告警、攻击链、总览和管理员接口都要求管理员 Bearer 令牌；原有匿名 `POST /api/events` 返回 `401`。有效采集器凭据访问管理员接口、或管理员令牌访问采集器接口时返回 `403`。管理员登录默认按来源 IP 限制为每分钟 10 次，命中限流会写入审计日志。本地 `.env.example` 保持 `AUTH_REQUIRED=false`，便于继续运行阶段六演示，不能用于生产。
 
 登录并创建一个 30 分钟内有效、仅可使用一次的注册令牌：
 
@@ -285,7 +285,7 @@ ENROLLMENT_TOKEN="$(curl --fail -sS https://<域名>/api/admin/enrollment-tokens
 - `POST /api/collector/events`：只接受 `source=host` 的事件数组；生产默认每批最多 500 条、2 MB、时间与服务器相差不超过 15 分钟。
 - `POST /api/collector/heartbeat`：更新采集器和主机最后在线时间。
 
-事件中的 `attributes.host_id` 和 `attributes.collector_id` 由服务端根据凭据覆盖，客户端不能冒充其他主机。成功响应可从本地队列删除对应事件；`429` 按 `Retry-After` 重试，网络错误和 `5xx` 采用退避重试，`401`、`403`、`413` 和 `422` 应停止重试并修正凭据或负载。重复发送相同 `event_id` 保持幂等。
+事件中的 `attributes.host_id` 和 `attributes.collector_id` 由服务端根据凭据覆盖，客户端不能冒充其他主机。成功响应可从本地队列删除对应事件；`429` 按 `Retry-After` 重试，网络错误和 `5xx` 采用退避重试，`401`、`403`、`413` 和 `422` 应停止重试并修正凭据或负载。重复发送本采集器已写入的 `event_id` 保持幂等，即使重试时已超过时间偏差窗口也会确认成功；其他采集器复用该 ID 会返回 `403`。
 
 管理员可通过 `POST /api/admin/collectors/{collector_id}/credentials/rotate` 轮换凭据；旧 Key 立即失效，新 Key 同样只返回一次。`POST /api/admin/collectors/{collector_id}/disable` 可禁用采集器，之后其请求返回 `403`。
 

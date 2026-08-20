@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     admin_password_hash: str = ""
     admin_session_secret: str = ""
     admin_session_ttl_minutes: int = 60
+    admin_login_rate_limit_per_minute: int = 10
     cors_origins: list[str] = Field(default_factory=list)
     collector_credential_ttl_days: int = 365
     collector_max_batch_size: int = 500

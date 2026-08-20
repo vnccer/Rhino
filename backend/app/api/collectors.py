@@ -18,6 +18,7 @@ from app.core.security import (
     require_collector,
     secret_hash,
 )
+from app.models.event import Event
 from app.models.identity import Collector, CollectorCredential, EnrollmentToken, Host
 from app.schemas.collector import (
     CollectorEnrollRequest,
@@ -156,11 +157,39 @@ def ingest_collector_events(
             detail=f"Batch exceeds {settings.collector_max_batch_size} events",
         )
     now = datetime.now(timezone.utc)
+    existing_events = {
+        record.event_id: record
+        for record in db.scalars(
+            select(Event).where(Event.event_id.in_([event.event_id for event in payload]))
+        )
+    }
     normalized = []
     for event in payload:
         if event.source != EventSource.HOST:
             raise HTTPException(status_code=422, detail="Collector events must use source=host")
-        if abs((as_utc(event.timestamp) - now).total_seconds()) > settings.collector_max_clock_skew_seconds:
+        existing = existing_events.get(event.event_id)
+        if existing is not None:
+            attributes = existing.attributes or {}
+            if (
+                attributes.get("host_id") != principal.host_id
+                or attributes.get("collector_id") != principal.collector_id
+            ):
+                write_audit(
+                    db,
+                    request,
+                    action="collector.event_ingest",
+                    outcome="rejected",
+                    actor_type="collector",
+                    actor_id=principal.collector_id,
+                    details={"reason": "event_id_owner_mismatch"},
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail="Event ID is already owned by another collector",
+                )
+        elif abs(
+            (as_utc(event.timestamp) - now).total_seconds()
+        ) > settings.collector_max_clock_skew_seconds:
             raise HTTPException(
                 status_code=422,
                 detail="Event timestamp is outside the allowed clock skew",

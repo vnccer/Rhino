@@ -142,6 +142,24 @@ def _authenticate_admin(
     if principal is None:
         from app.services.audit import write_audit
 
+        collector, _ = _resolve_collector(
+            db, request.headers.get("X-Collector-API-Key", "")
+        )
+        if collector is not None:
+            write_audit(
+                db,
+                request,
+                action="admin.authorization",
+                outcome="rejected",
+                actor_type="collector",
+                actor_id=collector.collector_id,
+                details={"reason": "collector_not_allowed"},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Collector credentials cannot access administrator APIs",
+            )
+
         write_audit(
             db,
             request,
@@ -161,8 +179,63 @@ def _authenticate_admin(
 def require_collector(request: Request, db: Annotated[Session, Depends(get_db)]) -> CollectorPrincipal:
     api_key = request.headers.get("X-Collector-API-Key", "")
     if not api_key:
+        admin = _admin_from_request(request)
+        if admin is not None:
+            from app.services.audit import write_audit
+
+            write_audit(
+                db,
+                request,
+                action="collector.authorization",
+                outcome="rejected",
+                actor_type="admin",
+                actor_id=admin.username,
+                details={"reason": "admin_not_allowed"},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Administrator credentials cannot access collector APIs",
+            )
         _audit_collector_rejection(db, request, "missing_credential")
         raise HTTPException(status_code=401, detail="Collector API key is required")
+    principal, rejection = _resolve_collector(db, api_key)
+    if principal is None:
+        admin = _admin_from_request(request)
+        if admin is not None:
+            from app.services.audit import write_audit
+
+            write_audit(
+                db,
+                request,
+                action="collector.authorization",
+                outcome="rejected",
+                actor_type="admin",
+                actor_id=admin.username,
+                details={"reason": "admin_not_allowed"},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Administrator credentials cannot access collector APIs",
+            )
+        _audit_collector_rejection(db, request, "invalid_or_expired_credential")
+        raise HTTPException(status_code=401, detail="Collector credential is invalid or expired")
+    if rejection == "collector_disabled":
+        _audit_collector_rejection(db, request, rejection)
+        raise HTTPException(status_code=403, detail="Collector is disabled")
+    return principal
+
+
+def _admin_from_request(request: Request) -> AdminPrincipal | None:
+    authorization = request.headers.get("Authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    return verify_admin_token(token) if scheme.lower() == "bearer" else None
+
+
+def _resolve_collector(
+    db: Session, api_key: str
+) -> tuple[CollectorPrincipal | None, str | None]:
+    if not api_key:
+        return None, "missing_credential"
     credential = db.scalar(
         select(CollectorCredential).where(
             CollectorCredential.fingerprint == fingerprint(api_key)
@@ -175,17 +248,16 @@ def require_collector(request: Request, db: Annotated[Session, Depends(get_db)])
         or not hmac.compare_digest(credential.secret_hash, secret_hash(api_key))
         or (credential.expires_at is not None and as_utc(credential.expires_at) <= now)
     ):
-        _audit_collector_rejection(db, request, "invalid_or_expired_credential")
-        raise HTTPException(status_code=401, detail="Collector credential is invalid or expired")
+        return None, "invalid_or_expired_credential"
     collector = db.get(Collector, credential.collector_id)
-    if collector is None or collector.status != "active":
-        _audit_collector_rejection(db, request, "collector_disabled")
-        raise HTTPException(status_code=403, detail="Collector is disabled")
-    return CollectorPrincipal(
+    if collector is None:
+        return None, "invalid_or_expired_credential"
+    principal = CollectorPrincipal(
         collector_id=str(collector.collector_id),
         host_id=collector.host_id,
         credential_id=str(credential.credential_id),
     )
+    return principal, None if collector.status == "active" else "collector_disabled"
 
 
 def _audit_collector_rejection(db: Session, request: Request, reason: str) -> None:
@@ -221,5 +293,10 @@ class SlidingWindowRateLimiter:
             requests.append(now)
             return True
 
+    def reset(self) -> None:
+        with self._lock:
+            self._requests.clear()
+
 
 collector_rate_limiter = SlidingWindowRateLimiter()
+admin_login_rate_limiter = SlidingWindowRateLimiter()

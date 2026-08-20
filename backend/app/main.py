@@ -42,26 +42,32 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(
-    title="AI-Agent Security Monitor",
-    version="0.1.1",
-    lifespan=lifespan,
-)
-app.add_middleware(CollectorBodyLimitMiddleware)
-if get_settings().cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=get_settings().cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Collector-API-Key"],
+def create_app() -> FastAPI:
+    settings = get_settings()
+    application = FastAPI(
+        title="AI-Agent Security Monitor",
+        version="0.1.1",
+        lifespan=lifespan,
     )
-app.include_router(health_router)
-app.include_router(auth_router)
-app.include_router(admin_router)
-app.include_router(collectors_router)
-app.include_router(collector_router)
-app.include_router(events_router)
-app.include_router(alerts_router)
-app.include_router(chains_router)
-app.include_router(overview_router)
+    application.add_middleware(CollectorBodyLimitMiddleware)
+    if settings.cors_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Collector-API-Key"],
+        )
+    application.include_router(health_router)
+    application.include_router(auth_router)
+    application.include_router(admin_router)
+    application.include_router(collectors_router)
+    application.include_router(collector_router)
+    application.include_router(events_router)
+    application.include_router(alerts_router)
+    application.include_router(chains_router)
+    application.include_router(overview_router)
+    return application
+
+
+app = create_app()

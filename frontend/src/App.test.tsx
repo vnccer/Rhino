@@ -98,4 +98,59 @@ describe("App", () => {
     expect(screen.getByLabelText("用户名")).toBeInTheDocument();
     expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");
   });
+
+  it("stores the administrator token and uses it for protected requests", async () => {
+    let authenticated = false;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/auth/login") {
+        authenticated = true;
+        return new Response(JSON.stringify({
+          access_token: "signed-admin-token",
+          token_type: "bearer",
+          expires_at: "2026-08-20T15:00:00Z",
+        }), { status: 200 });
+      }
+      if (!authenticated) {
+        return new Response(JSON.stringify({ detail: "authentication required" }), { status: 401 });
+      }
+      return new Response(JSON.stringify(responseFor(input)), { status: 200 });
+    });
+
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText("用户名"), {
+      target: { value: "security-admin" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "correct-horse-battery-staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(await screen.findByText("16")).toBeInTheDocument();
+    expect(sessionStorage.getItem("admin_access_token")).toBe("signed-admin-token");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/overview?days=7",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer signed-admin-token" }),
+      }),
+    );
+  });
+
+  it("explains when administrator login is rate limited", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input) === "/api/auth/login") {
+        return new Response(JSON.stringify({ detail: "rate limited" }), { status: 429 });
+      }
+      return new Response(JSON.stringify({ detail: "authentication required" }), { status: 401 });
+    });
+
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText("用户名"), {
+      target: { value: "security-admin" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "wrong" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("登录尝试过于频繁");
+  });
 });
