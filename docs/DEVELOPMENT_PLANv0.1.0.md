@@ -1,4 +1,4 @@
-# AI-Agent Security Monitor 施工文档
+# AI-Agent Security Monitor 施工文档 v0.1.0
 
 ## 1. 项目目标
 

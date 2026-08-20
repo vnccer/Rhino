@@ -166,6 +166,95 @@ docker compose down
 docker compose down -v
 ```
 
+## 腾讯云 Linux 部署
+
+阶段七的生产拓扑使用 Ubuntu 22.04 LTS（最低 2 vCPU、4 GB RAM、40 GB 云硬盘）和 Docker Engine + Compose 插件。生产 Compose 文件不会把 PostgreSQL、FastAPI 或前端端口发布到宿主机，只由 Nginx 反向代理对外提供 80/443；80 仅跳转到 HTTPS。
+
+### 服务器初始化
+
+使用非 root 管理员账户并通过 SSH 密钥登录，随后安装 Docker、启用防火墙和时间同步。腾讯云安全组与系统防火墙只允许可信管理员 IP 访问 SSH，以及公开访问 80/443：
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y ca-certificates curl git openssl age ufw chrony
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"
+sudo systemctl enable --now docker chrony
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow from <管理员可信IP>/32 to any port 22 proto tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw --force enable
+```
+
+不要开放 5432、8000 或 3000。部署账户应拥有项目目录，TLS 私钥由 root 或证书管理器维护，权限设为 `600`。
+
+### DNS 与 TLS
+
+将域名 A/AAAA 记录指向服务器，在服务器上准备受信任证书（例如 Certbot/Let's Encrypt 生成的 `fullchain.pem` 和 `privkey.pem`）。开发验证可以使用自签证书，但浏览器会显示警告，且不得把跳过校验作为正式配置。证书续期后重载代理：
+
+```bash
+sudo chmod 600 /etc/letsencrypt/live/<域名>/privkey.pem
+sudo docker compose --env-file .env.production -f compose.production.yaml exec proxy nginx -s reload
+```
+
+### 首次部署
+
+```bash
+git clone <仓库地址> ai-agent-security-monitor
+cd ai-agent-security-monitor
+cp .env.production.example .env.production
+openssl rand -base64 32  # 将结果填入 POSTGRES_PASSWORD，并同步 DATABASE_URL 中的密码
+chmod 600 .env.production
+# 编辑 DOMAIN、TLS_CERT_FILE、TLS_KEY_FILE 和数据库变量
+./scripts/deploy.sh
+curl --fail https://<域名>/health
+```
+
+脚本会拒绝占位符密钥，校验证书可读性，检查 Compose 配置，构建镜像，等待数据库健康后执行 `alembic upgrade head`，启动所有服务并轮询 HTTPS 健康检查。迁移在生产启动前执行，失败时不会宣称部署成功。
+
+### 升级与回滚
+
+升级前先做加密备份，再切换到已审核的版本并重新运行部署脚本：
+
+```bash
+export AGE_RECIPIENT='age1...'
+./scripts/backup-postgres.sh
+git fetch --tags
+git checkout <已审核版本>
+./scripts/deploy.sh
+docker compose --env-file .env.production -f compose.production.yaml ps
+```
+
+应用镜像和配置回滚到上一版本时，切回对应提交后再次运行 `deploy.sh`。数据库迁移若包含不可逆变更，必须先在隔离环境恢复备份并按迁移说明处理，不能只回滚镜像。
+
+### 加密备份与恢复
+
+备份脚本要求安装 `age` 和 `AGE_RECIPIENT`，默认写入权限为 `700` 的 `backups/`，文件为 `600`，保留 14 天；备份内容不进入 Git。恢复必须在隔离环境验证，确认事件数后再用于生产：
+
+```bash
+age --decrypt -i /secure/age-key.txt backups/security-monitor-<时间>.dump.age > /tmp/security-monitor.dump
+docker compose --env-file .env.production -f compose.production.yaml stop backend
+docker compose --env-file .env.production -f compose.production.yaml exec -T db pg_restore \
+  --clean --if-exists --no-owner --no-privileges -d security_monitor < /tmp/security-monitor.dump
+docker compose --env-file .env.production -f compose.production.yaml up -d backend
+```
+
+若修改了 `POSTGRES_DB`，将恢复命令中的 `security_monitor` 替换为实际数据库名。
+
+恢复前确认目标数据库和备份来源，恢复后检查 `https://<域名>/health`、事件查询和告警数量；完成后立即删除临时明文 dump，并保管好 age 私钥。定期在独立环境演练恢复，记录备份时间、事件数量和校验结果。
+
+### 故障排查
+
+```bash
+docker compose --env-file .env.production -f compose.production.yaml ps
+docker compose --env-file .env.production -f compose.production.yaml logs --tail=100 proxy backend db
+curl --insecure --verbose https://127.0.0.1/health
+```
+
+若代理无法启动，先检查证书路径和权限；若后端不健康，检查数据库健康状态、`DATABASE_URL` 与迁移日志。主机重启后所有服务应由 `restart: unless-stopped` 自动恢复，PostgreSQL 数据保存在 `postgres_data` 卷中。
+
 ## 检测规则
 
 规则位于 `rules/stage2.yaml`，采用字段匹配、分组计数、去重计数和有序序列两类检测方式：
