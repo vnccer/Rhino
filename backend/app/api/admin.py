@@ -6,19 +6,27 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.database import get_db
 from app.core.security import (
     AdminPrincipal,
+    as_utc,
     create_opaque_secret,
     fingerprint,
     require_admin_strict,
     secret_hash,
 )
-from app.models.identity import AuditLog, Collector, CollectorCredential, EnrollmentToken
+from app.models.identity import (
+    AuditLog,
+    Collector,
+    CollectorCredential,
+    EnrollmentToken,
+    Host,
+)
 from app.schemas.auth import AuditLogRead
 from app.schemas.collector import (
     CollectorCredentialCreated,
+    CollectorHealthRead,
     CollectorStatusResponse,
     EnrollmentTokenCreate,
     EnrollmentTokenCreated,
@@ -28,6 +36,43 @@ from app.services.audit import write_audit
 router = APIRouter(prefix="/api/admin", tags=["administration"])
 DatabaseSession = Annotated[Session, Depends(get_db)]
 Administrator = Annotated[AdminPrincipal, Depends(require_admin_strict)]
+
+
+@router.get("/collectors", response_model=list[CollectorHealthRead])
+def list_collectors(
+    db: DatabaseSession,
+    _: Administrator,
+) -> list[CollectorHealthRead]:
+    now = datetime.now(timezone.utc)
+    offline_after = timedelta(seconds=get_settings().collector_offline_after_seconds)
+    records = db.execute(
+        select(Collector, Host)
+        .join(Host, Host.host_id == Collector.host_id)
+        .order_by(Collector.last_seen_at.desc(), Collector.created_at.desc())
+    ).all()
+    return [
+        CollectorHealthRead(
+            collector_id=collector.collector_id,
+            host_id=host.host_id,
+            hostname=host.hostname,
+            os=host.os,
+            os_version=host.os_version,
+            version=collector.version,
+            status=collector.status,
+            online=collector.status == "active"
+            and collector.last_seen_at is not None
+            and now - as_utc(collector.last_seen_at) <= offline_after,
+            created_at=collector.created_at,
+            last_seen_at=collector.last_seen_at,
+            started_at=collector.started_at,
+            last_collected_at=collector.last_collected_at,
+            last_uploaded_at=collector.last_uploaded_at,
+            queue_depth=collector.queue_depth,
+            last_error=collector.last_error,
+            redaction_count=collector.redaction_count,
+        )
+        for collector, host in records
+    ]
 
 
 @router.get("/audit-logs", response_model=list[AuditLogRead])

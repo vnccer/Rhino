@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aasm-linux-collector"
+version = "0.1.1"
+description = "Linux host telemetry collector for AI-Agent Security Monitor"
+requires-python = ">=3.10"
+
+[project.scripts]
+aasm-collector = "aasm_linux_collector.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["aasm_linux_collector*"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+

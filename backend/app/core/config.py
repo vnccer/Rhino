@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     collector_max_batch_size: int = 500
     collector_max_body_bytes: int = 2_000_000
     collector_max_clock_skew_seconds: int = 900
+    collector_max_event_age_seconds: int = 604_800
     collector_rate_limit_per_minute: int = 120
+    collector_offline_after_seconds: int = 90
 
     model_config = SettingsConfigDict(
         env_file="../.env",

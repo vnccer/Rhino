@@ -1,6 +1,8 @@
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -73,6 +75,44 @@ def test_detection_across_separate_ingestion_requests_and_event_deduplication(
     assert alerts.status_code == 200
     assert len(alerts.json()) == 1
     assert len(alerts.json()[0]["evidence_event_ids"]) == 4
+
+
+def test_linux_host_authentication_telemetry_triggers_sequence_rule(
+    client: TestClient,
+) -> None:
+    start = datetime.now(timezone.utc) - timedelta(seconds=4)
+    events = []
+    for index, result in enumerate(["failure", "failure", "failure", "success"]):
+        events.append(
+            {
+                "event_id": str(uuid4()),
+                "timestamp": (start + timedelta(seconds=index)).isoformat(),
+                "source": "host",
+                "event_type": "http_request",
+                "actor": {"type": "user", "id": "aasm-test-user"},
+                "action": "authenticate",
+                "object": {
+                    "type": "account",
+                    "id": "aasm-test-user",
+                    "name": "aasm-test-user",
+                },
+                "result": result,
+                "attributes": {
+                    "host_id": "linux-test-host",
+                    "collector_id": "linux-test-collector",
+                    "authentication_method": "password",
+                    "source_ip": "203.0.113.9",
+                },
+            }
+        )
+
+    assert client.post("/api/events", json=events).status_code == 201
+    alerts = client.get(
+        "/api/alerts", params={"rule_id": "auth-failures-then-success"}
+    ).json()
+    assert len(alerts) == 1
+    assert alerts[0]["sources"] == ["host"]
+    assert alerts[0]["evidence_event_ids"] == [event["event_id"] for event in events]
 
 
 def test_alert_filters_and_validation(client: TestClient) -> None:

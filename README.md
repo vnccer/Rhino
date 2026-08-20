@@ -1,6 +1,6 @@
 # AI-Agent Security Monitor
 
-AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 8：生产部署、管理员认证与受控采集器接入。
+AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 9：生产部署、受控接入与 Linux Host Collector v0.1。
 
 ## 架构
 
@@ -58,6 +58,10 @@ flowchart LR
 - 受保护的采集器批量上报与心跳接口，服务端绑定主机/采集器身份
 - 上报请求体、批量数量、时间戳偏差和每凭据速率限制
 - 登录、注册、凭据拒绝、限流及管理员操作审计
+- Ubuntu 22.04 `auditd`/认证日志采集器，覆盖进程、文件、网络和认证事件
+- SQLite 有界持久队列、按序补传、指数退避/抖动和幂等事件 ID
+- 周期心跳、采集器健康字段、日志轮转游标以及采集端敏感参数脱敏
+- 最小权限 systemd 服务、一次性注册安装脚本、卸载脚本和受控验证说明
 
 ## 一键演示
 
@@ -284,6 +288,7 @@ ENROLLMENT_TOKEN="$(curl --fail -sS https://<域名>/api/admin/enrollment-tokens
 
 - `POST /api/collector/events`：只接受 `source=host` 的事件数组；生产默认每批最多 500 条、2 MB、时间与服务器相差不超过 15 分钟。
 - `POST /api/collector/heartbeat`：更新采集器和主机最后在线时间。
+- `GET /api/admin/collectors`：管理员查看主机资料、在线状态、最后心跳、队列深度与最近错误。
 
 事件中的 `attributes.host_id` 和 `attributes.collector_id` 由服务端根据凭据覆盖，客户端不能冒充其他主机。成功响应可从本地队列删除对应事件；`429` 按 `Retry-After` 重试，网络错误和 `5xx` 采用退避重试，`401`、`403`、`413` 和 `422` 应停止重试并修正凭据或负载。重复发送本采集器已写入的 `event_id` 保持幂等，即使重试时已超过时间偏差窗口也会确认成功；其他采集器复用该 ID 会返回 `403`。
 
@@ -297,6 +302,22 @@ curl --fail -sS https://<域名>/api/admin/audit-logs \
 ```
 
 审计详情不记录密码、注册令牌或 API Key。生产 CORS 使用 `.env.production` 中的 JSON 域名列表，例如 `["https://monitor.example.com"]`，不得配置通配符与凭据组合。
+
+## Linux Host Collector
+
+首发采集器支持 Ubuntu 22.04 LTS。先按上节创建一次性注册令牌，再在被监控主机的仓库目录执行：
+
+```bash
+cd collectors/linux
+sudo env \
+  AASM_API_URL=https://monitor.example.com \
+  AASM_ENROLLMENT_TOKEN="$ENROLLMENT_TOKEN" \
+  bash ./install.sh
+```
+
+安装器部署 `auditd` 规则、受限的 `aasm-collector` systemd 服务及本机 SQLite 队列。默认采集交互用户的进程启动、成功网络连接、`/tmp/aasm-test/` 写入以及 SSH/PAM 认证结果；不采集文件正文或网络载荷。队列默认上限 256 MiB、保留 7 天，只有平台确认成功后才删除；生产后端允许 7 天内的离线历史事件补传，同时继续拒绝超过 15 分钟的未来时间戳。
+
+完整的权限说明、私有 CA 配置、运行检查、断网恢复验证、受控四类事件验证和卸载步骤见 [`collectors/linux/README.md`](collectors/linux/README.md)。安装前应先检查并按批准范围调整 `systemd/aasm.rules`，不要在生产主机上进行破坏性测试。
 
 ## 检测规则
 
@@ -383,7 +404,7 @@ alembic revision --autogenerate -m "describe change"
 ```text
 backend/       FastAPI、SQLAlchemy、Alembic 与测试
 frontend/      React、TypeScript、Vite 与 Vitest
-collectors/    Agent Tool Call 上报示例及后续采集器
+collectors/    Agent Tool Call 示例与 Linux Host Collector
 rules/         YAML 检测规则
 assets.yaml    资产重要度配置
 demo/          两类演示数据、回放器、一键演示、清理脚本和示例链

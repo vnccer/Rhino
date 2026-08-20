@@ -18,12 +18,14 @@ def configure_auth() -> tuple[object, dict[str, object]]:
         "admin_login_rate_limit_per_minute": settings.admin_login_rate_limit_per_minute,
         "collector_max_batch_size": settings.collector_max_batch_size,
         "collector_max_body_bytes": settings.collector_max_body_bytes,
+        "collector_max_event_age_seconds": settings.collector_max_event_age_seconds,
         "collector_rate_limit_per_minute": settings.collector_rate_limit_per_minute,
     }
     settings.auth_required = True
     settings.admin_username = "security-admin"
     settings.admin_password_hash = hash_password("correct-horse-battery-staple")
     settings.admin_session_secret = "test-session-secret-that-is-at-least-32-bytes"
+    settings.collector_max_event_age_seconds = 900
     return settings, original
 
 
@@ -103,6 +105,7 @@ def test_admin_authentication_and_protected_reads(client: TestClient) -> None:
         )
         assert rejected.status_code == 401
         assert client.get("/api/events").status_code == 401
+        assert client.get("/api/admin/collectors").status_code == 401
         assert client.post("/api/events", json=event_payload()).status_code == 401
         headers = admin_headers(client)
         assert client.get("/api/events", headers=headers).status_code == 200
@@ -200,8 +203,27 @@ def test_enrollment_and_collector_identity_are_enforced(client: TestClient) -> N
         assert client.post(
             "/api/collector/heartbeat",
             headers=rotated_headers,
-            json={"version": "0.1.1", "queue_depth": 0},
+            json={
+                "version": "0.1.1",
+                "started_at": "2026-08-20T01:00:00Z",
+                "queue_depth": 7,
+                "last_collected_at": "2026-08-20T01:01:00Z",
+                "last_uploaded_at": "2026-08-20T01:01:01Z",
+                "last_error": "temporary network failure",
+                "redaction_count": 3,
+            },
         ).status_code == 200
+        health = client.get("/api/admin/collectors", headers=headers)
+        assert health.status_code == 200
+        record = next(
+            item for item in health.json() if item["collector_id"] == collector["collector_id"]
+        )
+        assert record["online"] is True
+        assert record["hostname"] == "vm-security-monitor-01"
+        assert record["queue_depth"] == 7
+        assert record["last_error"] == "temporary network failure"
+        assert record["redaction_count"] == 3
+        assert record["last_collected_at"].startswith("2026-08-20T01:01:00")
         assert client.post(
             f"/api/admin/collectors/{collector['collector_id']}/disable", headers=headers
         ).status_code == 200

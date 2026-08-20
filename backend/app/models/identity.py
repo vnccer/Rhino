@@ -37,6 +37,12 @@ class Collector(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    queue_depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    redaction_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class CollectorCredential(Base):

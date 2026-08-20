@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class EnrollmentTokenCreate(BaseModel):
@@ -40,8 +40,19 @@ class CollectorHeartbeat(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: str = Field(min_length=1, max_length=32)
-    queue_depth: int = Field(default=0, ge=0)
+    started_at: datetime | None = None
+    queue_depth: int = Field(default=0, ge=0, le=2_147_483_647)
+    last_collected_at: datetime | None = None
+    last_uploaded_at: datetime | None = None
     last_error: str | None = Field(default=None, max_length=500)
+    redaction_count: int = Field(default=0, ge=0, le=2_147_483_647)
+
+    @field_validator("started_at", "last_collected_at", "last_uploaded_at")
+    @classmethod
+    def validate_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("heartbeat timestamps must include a timezone")
+        return value
 
 
 class CollectorHeartbeatResponse(BaseModel):
@@ -58,3 +69,22 @@ class CollectorCredentialCreated(BaseModel):
 class CollectorStatusResponse(BaseModel):
     collector_id: UUID
     status: str
+
+
+class CollectorHealthRead(BaseModel):
+    collector_id: UUID
+    host_id: str
+    hostname: str
+    os: str
+    os_version: str
+    version: str
+    status: str
+    online: bool
+    created_at: datetime
+    last_seen_at: datetime | None
+    started_at: datetime | None
+    last_collected_at: datetime | None
+    last_uploaded_at: datetime | None
+    queue_depth: int
+    last_error: str | None
+    redaction_count: int

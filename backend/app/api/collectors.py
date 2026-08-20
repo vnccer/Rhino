@@ -187,12 +187,15 @@ def ingest_collector_events(
                     status_code=403,
                     detail="Event ID is already owned by another collector",
                 )
-        elif abs(
-            (as_utc(event.timestamp) - now).total_seconds()
-        ) > settings.collector_max_clock_skew_seconds:
+        elif (as_utc(event.timestamp) - now).total_seconds() > settings.collector_max_clock_skew_seconds:
             raise HTTPException(
                 status_code=422,
-                detail="Event timestamp is outside the allowed clock skew",
+                detail="Event timestamp is too far in the future",
+            )
+        elif (now - as_utc(event.timestamp)).total_seconds() > settings.collector_max_event_age_seconds:
+            raise HTTPException(
+                status_code=422,
+                detail="Event timestamp is older than the allowed offline retention window",
             )
         attributes = dict(event.attributes)
         attributes["host_id"] = principal.host_id
@@ -223,6 +226,12 @@ def collector_heartbeat(
     if collector:
         collector.version = payload.version
         collector.last_seen_at = now
+        collector.started_at = payload.started_at
+        collector.last_collected_at = payload.last_collected_at
+        collector.last_uploaded_at = payload.last_uploaded_at
+        collector.queue_depth = payload.queue_depth
+        collector.last_error = payload.last_error
+        collector.redaction_count = payload.redaction_count
     if host:
         host.last_seen_at = now
     db.commit()

@@ -1,0 +1,9 @@
+# Process execution and outbound connection events for interactive/non-system users.
+-a always,exit -F arch=b64 -S execve,execveat -F auid>=1000 -F auid!=4294967295 -k aasm_process
+-a always,exit -F arch=b32 -S execve,execveat -F auid>=1000 -F auid!=4294967295 -k aasm_process
+-a always,exit -F arch=b64 -S connect -F success=1 -F auid>=1000 -F auid!=4294967295 -k aasm_network
+-a always,exit -F arch=b32 -S connect -F success=1 -F auid>=1000 -F auid!=4294967295 -k aasm_network
+
+# Stage-nine controlled validation path. Add approved paths as separate -w rules.
+-w /tmp/aasm-test/ -p wa -k aasm_file
+
