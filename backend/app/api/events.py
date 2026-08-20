@@ -5,10 +5,13 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.security import require_admin
 from app.schemas.event import EventBatch, EventCreate, EventRead, EventSource, EventType
 from app.services.events import create_events, query_events
 
-router = APIRouter(prefix="/api/events", tags=["events"])
+router = APIRouter(
+    prefix="/api/events", tags=["events"], dependencies=[Depends(require_admin)]
+)
 DatabaseSession = Annotated[Session, Depends(get_db)]
 
 

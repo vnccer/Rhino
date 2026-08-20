@@ -7,9 +7,29 @@ export class ApiError extends Error {
 }
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { signal, headers: { Accept: "application/json" } });
-  if (!response.ok) throw new ApiError(response.status, `请求失败 (${response.status})`);
+  const token = sessionStorage.getItem("admin_access_token");
+  const response = await fetch(path, {
+    signal,
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new Event("admin-auth-required"));
+    throw new ApiError(response.status, `请求失败 (${response.status})`);
+  }
   return response.json() as Promise<T>;
+}
+
+export async function login(username: string, password: string) {
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) throw new ApiError(response.status, "用户名或密码错误");
+  return response.json() as Promise<{ access_token: string; expires_at: string }>;
 }
 
 export function getOverview(signal?: AbortSignal) {

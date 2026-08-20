@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
@@ -53,7 +53,11 @@ function responseFor(input: RequestInfo | URL) {
 }
 
 describe("App", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    sessionStorage.clear();
+  });
 
   it("opens a high-risk chain and exposes raw event evidence", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
@@ -81,5 +85,17 @@ describe("App", () => {
     expect(errors.length).toBeGreaterThan(0);
     fireEvent.click(screen.getAllByRole("button", { name: /重新加载/ })[0]);
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(3));
+  });
+
+  it("shows the administrator login when APIs require authentication", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "authentication required" }), { status: 401 }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "管理员登录" })).toBeInTheDocument();
+    expect(screen.getByLabelText("用户名")).toBeInTheDocument();
+    expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");
   });
 });

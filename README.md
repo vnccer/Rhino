@@ -1,6 +1,6 @@
 # AI-Agent Security Monitor
 
-AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 6：可复现演示与最终交付。
+AI Agent、主机和 Web 行为的统一检测与风险分析平台。当前完成阶段 8：生产部署、管理员认证与受控采集器接入。
 
 ## 架构
 
@@ -52,6 +52,12 @@ flowchart LR
 - 按事件时间顺序回放的正常运维与 AI 自动攻击场景
 - 一键启动、场景验收、攻击链 JSON 导出和数据卷清理
 - Pytest 与 Vitest 基础测试
+- 单管理员 PBKDF2 密码认证与短期 HMAC 会话令牌
+- 短期、限次的采集器注册令牌与每采集器独立 API Key
+- 采集器凭据只保存哈希与指纹，注册结果中的明文 Key 只返回一次
+- 受保护的采集器批量上报与心跳接口，服务端绑定主机/采集器身份
+- 上报请求体、批量数量、时间戳偏差和每凭据速率限制
+- 登录、注册、凭据拒绝、限流及管理员操作审计
 
 ## 一键演示
 
@@ -176,7 +182,7 @@ docker compose down -v
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y ca-certificates curl git openssl age ufw chrony
+sudo apt install -y ca-certificates curl git jq openssl age ufw chrony
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker "$USER"
 sudo systemctl enable --now docker chrony
@@ -205,10 +211,12 @@ sudo docker compose --env-file .env.production -f compose.production.yaml exec p
 git clone <仓库地址> ai-agent-security-monitor
 cd ai-agent-security-monitor
 cp .env.production.example .env.production
-openssl rand -base64 32  # 将结果填入 POSTGRES_PASSWORD，并同步 DATABASE_URL 中的密码
+openssl rand -hex 32  # 将结果填入 POSTGRES_PASSWORD，并同步 DATABASE_URL 中的密码
+python3 scripts/hash-admin-password.py  # 将结果用单引号填入 ADMIN_PASSWORD_HASH
+openssl rand -hex 32  # 将结果填入 ADMIN_SESSION_SECRET
 chmod 600 .env.production
-# 编辑 DOMAIN、TLS_CERT_FILE、TLS_KEY_FILE 和数据库变量
-./scripts/deploy.sh
+# 编辑 DOMAIN、证书、数据库、管理员与 CORS 变量
+bash scripts/deploy.sh
 curl --fail https://<域名>/health
 ```
 
@@ -220,10 +228,10 @@ curl --fail https://<域名>/health
 
 ```bash
 export AGE_RECIPIENT='age1...'
-./scripts/backup-postgres.sh
+bash scripts/backup-postgres.sh
 git fetch --tags
 git checkout <已审核版本>
-./scripts/deploy.sh
+bash scripts/deploy.sh
 docker compose --env-file .env.production -f compose.production.yaml ps
 ```
 
@@ -254,6 +262,41 @@ curl --insecure --verbose https://127.0.0.1/health
 ```
 
 若代理无法启动，先检查证书路径和权限；若后端不健康，检查数据库健康状态、`DATABASE_URL` 与迁移日志。主机重启后所有服务应由 `restart: unless-stopped` 自动恢复，PostgreSQL 数据保存在 `postgres_data` 卷中。
+
+## 身份认证与采集器接入
+
+生产模板设置 `AUTH_REQUIRED=true`。此时除 `/health`、`/api/auth/login` 和采集器注册外，事件、告警、攻击链、总览和管理员接口都要求管理员 Bearer 令牌；原有匿名 `POST /api/events` 返回 `401`。本地 `.env.example` 保持 `AUTH_REQUIRED=false`，便于继续运行阶段六演示，不能用于生产。
+
+登录并创建一个 30 分钟内有效、仅可使用一次的注册令牌：
+
+```bash
+ADMIN_TOKEN="$(curl --fail -sS https://<域名>/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"<管理员>","password":"<密码>"}' | jq -r .access_token)"
+
+ENROLLMENT_TOKEN="$(curl --fail -sS https://<域名>/api/admin/enrollment-tokens \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"expires_in_minutes":30,"max_uses":1}' | jq -r .enrollment_token)"
+```
+
+注册接口为 `POST /api/collectors/enroll`，需要提交该令牌以及稳定 `host_id`、主机名、系统版本和采集器版本。响应中的 `api_key` 只显示一次；平台只保存 SHA-256 哈希和短指纹。采集器后续以 `X-Collector-API-Key` 调用：
+
+- `POST /api/collector/events`：只接受 `source=host` 的事件数组；生产默认每批最多 500 条、2 MB、时间与服务器相差不超过 15 分钟。
+- `POST /api/collector/heartbeat`：更新采集器和主机最后在线时间。
+
+事件中的 `attributes.host_id` 和 `attributes.collector_id` 由服务端根据凭据覆盖，客户端不能冒充其他主机。成功响应可从本地队列删除对应事件；`429` 按 `Retry-After` 重试，网络错误和 `5xx` 采用退避重试，`401`、`403`、`413` 和 `422` 应停止重试并修正凭据或负载。重复发送相同 `event_id` 保持幂等。
+
+管理员可通过 `POST /api/admin/collectors/{collector_id}/credentials/rotate` 轮换凭据；旧 Key 立即失效，新 Key 同样只返回一次。`POST /api/admin/collectors/{collector_id}/disable` 可禁用采集器，之后其请求返回 `403`。
+
+管理员可查询最近审计记录：
+
+```bash
+curl --fail -sS https://<域名>/api/admin/audit-logs \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+审计详情不记录密码、注册令牌或 API Key。生产 CORS 使用 `.env.production` 中的 JSON 域名列表，例如 `["https://monitor.example.com"]`，不得配置通配符与凭据组合。
 
 ## 检测规则
 

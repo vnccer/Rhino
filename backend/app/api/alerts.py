@@ -5,12 +5,15 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.security import require_admin
 from app.schemas.alert import AlertRead
 from app.schemas.event import EventSource
 from app.schemas.rule import RuleSeverity
 from app.services.alerts import alert_sources, query_alerts
 
-router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+router = APIRouter(
+    prefix="/api/alerts", tags=["alerts"], dependencies=[Depends(require_admin)]
+)
 DatabaseSession = Annotated[Session, Depends(get_db)]
 
 

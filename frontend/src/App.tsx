@@ -1,10 +1,10 @@
 import {
-  Activity, AlertTriangle, BarChart3, ChevronRight, CircleAlert, GitBranch,
+  Activity, AlertTriangle, BarChart3, ChevronRight, CircleAlert, GitBranch, LogIn, LogOut,
   RefreshCw, Search, ShieldAlert,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { getAlerts, getChain, getChains, getOverview } from "./api";
+import { getAlerts, getChain, getChains, getOverview, login } from "./api";
 import { ChainGraph } from "./components/ChainGraph";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { TrendChart } from "./components/TrendChart";
@@ -31,6 +31,8 @@ function LoadingRows() {
 }
 
 export default function App() {
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authenticated, setAuthenticated] = useState(() => Boolean(sessionStorage.getItem("admin_access_token")));
   const [view, setView] = useState<View>("overview");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [chains, setChains] = useState<ChainSummary[]>([]);
@@ -46,6 +48,12 @@ export default function App() {
   const [chainState, setChainState] = useState<LoadState>("ready");
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null);
   const [selectedNode, setSelectedNode] = useState<ChainNode | null>(null);
+
+  useEffect(() => {
+    const requireAuth = () => { setAuthenticated(false); setAuthRequired(true); };
+    window.addEventListener("admin-auth-required", requireAuth);
+    return () => window.removeEventListener("admin-auth-required", requireAuth);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -98,6 +106,10 @@ export default function App() {
     setSelectedNode(chainDetail?.nodes.find((item) => item.node_id === id) ?? null);
   }, [chainDetail]);
 
+  if (authRequired) {
+    return <LoginPage onAuthenticated={() => { setAuthenticated(true); setAuthRequired(false); setReload((value) => value + 1); }} />;
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -111,7 +123,7 @@ export default function App() {
       </aside>
 
       <main className="main">
-        <header className="topbar"><div><p className="eyebrow">ANALYSIS CONSOLE</p><h1>{view === "overview" ? "安全态势总览" : view === "alerts" ? "检测告警" : "攻击链分析"}</h1></div><button className="icon-button" onClick={() => setReload((value) => value + 1)} aria-label="刷新数据" title="刷新数据"><RefreshCw size={18} /></button></header>
+        <header className="topbar"><div><p className="eyebrow">ANALYSIS CONSOLE</p><h1>{view === "overview" ? "安全态势总览" : view === "alerts" ? "检测告警" : "攻击链分析"}</h1></div><div className="topbar-actions"><button className="icon-button" onClick={() => setReload((value) => value + 1)} aria-label="刷新数据" title="刷新数据"><RefreshCw size={18} /></button>{authenticated && <button className="icon-button" onClick={() => { sessionStorage.removeItem("admin_access_token"); setAuthenticated(false); setAuthRequired(true); }} aria-label="退出登录" title="退出登录"><LogOut size={18} /></button>}</div></header>
 
         {view === "overview" && <OverviewPage state={baseState} overview={overview} chains={chains} retry={() => setReload((value) => value + 1)} openChain={openChain} openChains={() => setView("chains")} />}
         {view === "alerts" && <AlertsPage alerts={alerts} state={alertState} filters={filters} setFilters={setFilters} rules={rules} apply={() => setAppliedFilters(filters)} retry={() => setReload((value) => value + 1)} select={setSelectedAlert} />}
@@ -123,6 +135,35 @@ export default function App() {
       {selectedNode && chainDetail && <NodeDrawer node={selectedNode} detail={chainDetail} onClose={() => setSelectedNode(null)} onEvent={(event) => { setSelectedNode(null); setSelectedEvent(event); }} />}
     </div>
   );
+}
+
+function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  return <main className="login-page">
+    <form className="login-panel" onSubmit={(event) => {
+      event.preventDefault();
+      setSubmitting(true);
+      setError("");
+      login(username, password)
+        .then((result) => {
+          sessionStorage.setItem("admin_access_token", result.access_token);
+          onAuthenticated();
+        })
+        .catch(() => setError("用户名或密码错误"))
+        .finally(() => setSubmitting(false));
+    }}>
+      <div className="brand-mark"><ShieldAlert size={22} /></div>
+      <div><p className="eyebrow">SECURE CONSOLE</p><h1>管理员登录</h1></div>
+      <label>用户名<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required /></label>
+      <label>密码<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+      {error && <p className="login-error" role="alert">{error}</p>}
+      <button type="submit" disabled={submitting}><LogIn size={17} />{submitting ? "正在验证" : "登录"}</button>
+    </form>
+  </main>;
 }
 
 function OverviewPage({ state, overview, chains, retry, openChain, openChains }: { state: LoadState; overview: Overview | null; chains: ChainSummary[]; retry: () => void; openChain: (id: string) => void; openChains: () => void }) {

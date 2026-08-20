@@ -5,11 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.security import require_admin
 from app.schemas.chain import AttackStage, ChainDetail, ChainEdgeRead, ChainNodeRead, ChainSummary
 from app.schemas.event import EventRead
 from app.services.chains import get_chain, query_chains
 
-router = APIRouter(prefix="/api/chains", tags=["attack chains"])
+router = APIRouter(
+    prefix="/api/chains", tags=["attack chains"], dependencies=[Depends(require_admin)]
+)
 DatabaseSession = Annotated[Session, Depends(get_db)]
 
 

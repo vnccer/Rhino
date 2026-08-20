@@ -7,12 +7,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.security import require_admin
 from app.models.alert import Alert
 from app.models.chain import AttackChain
 from app.models.event import Event
 from app.schemas.overview import OverviewRead, TrendPoint
 
-router = APIRouter(prefix="/api/overview", tags=["overview"])
+router = APIRouter(
+    prefix="/api/overview", tags=["overview"], dependencies=[Depends(require_admin)]
+)
 DatabaseSession = Annotated[Session, Depends(get_db)]
 
 
